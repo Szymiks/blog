@@ -7,10 +7,44 @@
     <p class="date">
         Opublikowany {{ post.publish }} przez {{ post.author }}
     </p>
-    {{ post.body|linebreaks }}
+        <p>{{ post.body|linebreaks }}</p>
     <p>
         <a href="{% url "blog:post_share" post.id %}">
             Udostępnij post
         </a>
     </p>
+    <p><a href="{% url 'blog:post_update' year=post.publish.year month=post.publish.month day=post.publish.day slug=post.slug %}"><b>Edytuj post</b></a></p>
+    <p><a href="{% url 'blog:post_delete' pk=post.pk %}"><b>Usuń post</b></a></>
+    <h2>Podobne posty</h2>
+    {% for post in similar_posts %}
+        <p>
+            <a href="{{ post.get_absolute_url }}">{{ post.title }}</a>
+        </p>
+    {% empty %}
+        Nie ma podobnych postów.
+    {% endfor %}
+
+    {% with comments.count as total_comments %}
+        <h2> {{ total_comments }} komentarz{{ total_comments|pluralize:"y" }}</h2>
+    {% endwith %}
+    {% for comment in comments %}
+        <div class="comment">
+            <p class="info">
+                Komentarz {{ forloop.counter }} dodany przez {{ comment.name }}
+                {{ comment.created }}
+            </p>
+        {{ comment.body|linebreaks }}
+        </div>
+    {% empty %}
+        <p>Nie ma żadnych komentarzy.</p>
+    {% endfor %}
+    {% if new_comment %}
+        <h2>Twój komentarz został dodany</h2>
+    {% else %}
+        <form action="." method="post">
+            {{ comment_form.as_p }}
+            {% csrf_token %}
+        <p><input type="submit" value="Dodaj komentarz"></p>
+        </form>
+    {% endif %}
 {% endblock %}
