@@ -1,21 +1,19 @@
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, TrigramSimilarity
 from django.core.mail import send_mail
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.db.models import Count
 from django.shortcuts import render, get_object_or_404, redirect
 
 # Create your views here.
-from django.urls import reverse, reverse_lazy
-from django.utils.decorators import method_decorator
-from django.views.generic import ListView, DetailView, FormView, CreateView, TemplateView, UpdateView, DeleteView
 from taggit.models import Tag
 
 from blog.models import Post
 
 ### Widoki funkcyjne
-from blog.forms import EmailPostForm, CommentForm, PostUpdateForm
+from blog.forms import EmailPostForm, CommentForm, PostUpdateForm, PostCreateForm, SearchForm
 
 
 @login_required()
@@ -129,91 +127,23 @@ def post_delete(request, pk):
     return render(request, "blog/confirmation_to_delete.html", {'object': post})
 
 
+def post_search(request):
+    form = SearchForm()
+    results = []
+    query = None
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### Widoki oparte na klasach bazowych Django
-
-
-@method_decorator(login_required, name="dispatch")
-class HomepageView(TemplateView):
-    template_name = "blog/home.html"
-
-
-@method_decorator(login_required, name="dispatch")
-class PostListView(ListView):
-    queryset = Post.published.all()
-    context_object_name = 'posts'
-    paginate_by = 3
-    template_name = 'blog/post/list.html'
-
-
-@method_decorator(login_required, name="dispatch")
-class PostDetailView(DetailView):
-    model = Post
-    template_name = 'blog/post/detail.html'
-
-
-@method_decorator(login_required, name="dispatch")
-class PostShareView(FormView):
-    form_class = EmailPostForm
-    template_name = "blog/post/share.html"
-    extra_context = {'sent': False}
-
-    def post(self, request, *args, **kwargs):
-        form = self.get_form()
+    if 'query' in request.GET:
+        form = SearchForm(request.GET)
         if form.is_valid():
-            cd = form.cleaned_data
-            post = get_object_or_404(Post, pk=self.kwargs['post_id'], status='published')
-
-            post_url = self.request.build_absolute_uri(post.get_absolute_url())
-            subject = '{} ({}) zachęca do przeczytania "{}"'.format(cd['name'], cd['email'], post.title)
-            message = 'Przeczytaj post "{}" na stronie {}\n\n Komentarza dodany przez {}:' \
-                      '{}'.format(post.title, post_url, cd['name'], cd['comments'])
-
-            send_mail(subject, message, 'admin@myblog.com', [cd['to']])
-            self.extra_context['sent'] = True
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['post'] = get_object_or_404(Post, pk=self.kwargs['post_id'], status='published')
-        return context
-
-    def get_success_url(self):
-        return reverse("blog:post_share", kwargs={'post_id': self.kwargs['post_id']})
-
-
-class SignUpView(CreateView):
-    form_class = UserCreationForm
-    template_name = 'registration/signup.html'
-
-    def get_success_url(self):
-        return reverse("blog:post_list")
-
-
-class PostUpdateView(UpdateView):
-    model = Post
-    fields = ['title', 'body']
-    template_name = "blog/post/update_post.html"
-
-
-class DeletePostView(DeleteView):
-    model = Post
-    template_name = "blog/confirmation_to_delete.html"
-    success_url = reverse_lazy('blog:post_list')
+            query = form.cleaned_data['query']
+            search_vector = SearchVector('title', weight='A') + SearchVector('body', weight='B')
+            search_query = SearchQuery(query)
+            results = Post.objects.annotate(
+                similarity=TrigramSimilarity('title', query)
+            ).filter(similarity__gt=0.1).order_by('-similarity')
+    return render(request, 'blog/post/search.html',
+                  {'form': form,
+                   'query': query,
+                   'results': results
+                   }
+                  )
